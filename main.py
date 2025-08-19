@@ -133,45 +133,88 @@ def buscar_carpeta_por_nombre(service, nombre_carpeta):
 def list_images():
     try:
         data = request.get_json(force=True) or {}
-        info_proyecto = data.get("info_proyecto") or {}
-        # Puedes aceptar folder_name o folder_id directo
+        info_proyecto = (data.get("info_proyecto") or {})
         folder_name = (info_proyecto.get("folder_name") or data.get("folder_name") or "").strip()
         folder_id = data.get("folder_id")
 
-        # Autenticación SIEMPRE por Service Account (mismo método del resto)
+        # 1) Autenticación SIEMPRE con Service Account
         service, sa_email = authenticate_google_drive()
         if not service:
-            return jsonify({"error":"No se pudo autenticar con Drive"}), 500
+            return jsonify({"error": "No se pudo autenticar con Drive."}), 500
 
-        # Resuelve folder_id si sólo vino el nombre
+        # 2) Resolver folder_id si vino sólo el nombre
         if not folder_id:
             if not folder_name:
-                return jsonify({"error":"Falta 'folder_name' o 'folder_id'"}), 400
+                return jsonify({"error": "Falta 'folder_name' o 'folder_id'."}), 400
+
             folder_id = find_drive_id(
                 service,
-                f"name = '{folder_name}' and mimeType = 'application/vnd.google-apps.folder'",
+                "name = '{0}' and mimeType = 'application/vnd.google-apps.folder'".format(folder_name),
                 include_all_drives=True
             )
             if not folder_id:
                 return jsonify({"error": f"No se encontró la carpeta '{folder_name}' (o la SA no tiene permisos)."}), 404
 
-        # IMPORTANTE: comparte la carpeta en Drive con la Service Account (sa_email)
-        # Lista solo imágenes dentro de la carpeta (incluye Shared Drives)
-        query = f"'{folder_id}' in parents and mimeType contains 'image/' and trashed = false"
-        resp = service.files().list(
-            q=query,
-            fields="files(id,name,mimeType,thumbnailLink,webViewLink)",
+        # 3) Listar imágenes dentro de la carpeta (incluye Shared Drives)
+        imgs_q = f"'{folder_id}' in parents and mimeType contains 'image/' and trashed = false"
+        resp_imgs = service.files().list(
+            q=imgs_q,
+            fields="files(id,name,mimeType,webViewLink,thumbnailLink)",
             pageSize=200,
             supportsAllDrives=True,
             includeItemsFromAllDrives=True
         ).execute()
+        images = [
+            {
+                "id": f["id"],
+                "name": f["name"],
+                "mimeType": f.get("mimeType"),
+                "webViewLink": f.get("webViewLink")
+            }
+            for f in resp_imgs.get("files", [])
+        ]
 
-        files = resp.get("files", [])
-        images = [{"id": f["id"], "name": f["name"], "mimeType": f.get("mimeType")} for f in files]
-        return jsonify({"images": images, "folder_id": folder_id, "service_account": sa_email})
-    
+        # 4) Resolver archivos estáticos esperados (dentro de la misma carpeta)
+        parent_q = f"'{folder_id}' in parents and trashed = false"
+
+        # Tablas.xlsx
+        tablas_id = find_drive_id(service, f"{parent_q} and name = 'Tablas.xlsx'", include_all_drives=True)
+
+        # Logo: intentamos varias extensiones por si cambia
+        logo_id = (
+            find_drive_id(service, f"{parent_q} and name = 'logo2.jpg'", include_all_drives=True)
+            or find_drive_id(service, f"{parent_q} and name = 'logo2.png'", include_all_drives=True)
+            or find_drive_id(service, f"{parent_q} and name = 'logo.jpg'", include_all_drives=True)
+            or find_drive_id(service, f"{parent_q} and name = 'logo.png'", include_all_drives=True)
+        )
+
+        # Ubicación(es)
+        img_ubicacion_proyecto_id = (
+            find_drive_id(service, f"{parent_q} and name = 'ubicacion.png'", include_all_drives=True)
+            or find_drive_id(service, f"{parent_q} and name = 'ubicacion.jpg'", include_all_drives=True)
+        )
+        img_ubicacion_paradas_id = (
+            find_drive_id(service, f"{parent_q} and name = 'ubicacion_paraderos.png'", include_all_drives=True)
+            or find_drive_id(service, f"{parent_q} and name = 'ubicacion_paraderos.jpg'", include_all_drives=True)
+        )
+
+        # 5) Respuesta (incluye alias 'tablas' para compatibilidad con el front antiguo)
+        return jsonify({
+            "ok": True,
+            "folder_id": folder_id,
+            "service_account": sa_email,
+            "images": images,
+            "drive_file_ids": {
+                "tablas_id": tablas_id,
+                "logo_id": logo_id,
+                "img_ubicacion_proyecto_id": img_ubicacion_proyecto_id,
+                "img_ubicacion_paradas_id": img_ubicacion_paradas_id
+            },
+            "tablas": tablas_id  # <-- alias legacy
+        }), 200
+
     except Exception as e:
-        # Devuelve detalle para depurar
+        print(f"❌ /api/list-images error: {e}")
         return jsonify({"error": str(e)}), 500
     
 @app.route('/api/analyze-image', methods=['POST'], strict_slashes=False)
