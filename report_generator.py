@@ -677,11 +677,11 @@ def crear_informe_paraderos(datos_informe,
                 headers = ["Característica", "Cumplimiento", "Observación"]
                 agregar_tabla_formateada(
                     document,
+                    descripcion="Tabla de Características del Paradero",
+                    estado=estado_informe,
+                    fuente="Elaboración Propia",
                     headers=headers,
-                    rows=filas,
-                    titulo="Tabla de Características del Paradero",
-                    estado=estado_informe,  # si tu función lo usa
-                    fuente="Elaboración Propia"
+                    rows=filas
                 )
 
 
@@ -708,8 +708,8 @@ def crear_informe_paraderos(datos_informe,
 
                 # Lee directamente desde el buffer en memoria
                 df_resumen = pd.read_excel(fh, sheet_name="Paradas")  # ajusta nombre de hoja si corresponde
-                agregar_tabla_formateada(document, df_resumen,
-                                       "Información de Paradas de Transporte Públic",
+                agregar_imagen_con_formato_drive(document, df_resumen,
+                                       "Información de Paradas de Transporte Público",
                                        estado=estado_informe,
                                        fuente="Elaboración Propia en base DTPM - RED movilidad - Terreno")
             except Exception as e:
@@ -742,7 +742,7 @@ def crear_informe_paraderos(datos_informe,
 
                 # Lee directamente desde el buffer en memoria
                 df_resumen = pd.read_excel(fh, sheet_name="Resumen")  # ajusta nombre de hoja si corresponde
-                agregar_tabla_formateada(document, df_resumen,
+                agregar_imagen_con_formato_drive(document, df_resumen,
                                        "Resumen estado de Paraderos",
                                        estado=estado_informe,
                                        fuente="Elaboración Propia en base DTPM - RED movilidad - Terreno")
