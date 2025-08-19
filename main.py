@@ -133,6 +133,7 @@ def buscar_carpeta_por_nombre(service, nombre_carpeta):
 def list_images():
     try:
         data = request.get_json(force=True) or {}
+        print(f"[/api/list-images] payload: {data}")
         info_proyecto = (data.get("info_proyecto") or {})
         folder_name = (info_proyecto.get("folder_name") or data.get("folder_name") or "").strip()
         folder_id = data.get("folder_id")
@@ -197,6 +198,8 @@ def list_images():
             find_drive_id(service, f"{parent_q} and name = 'ubicacion_paraderos.png'", include_all_drives=True)
             or find_drive_id(service, f"{parent_q} and name = 'ubicacion_paraderos.jpg'", include_all_drives=True)
         )
+        print(f"[/api/list-images] OK folder_id={folder_id} tablas_id={tablas_id} imgs={len(images)}")
+
 
         # 5) Respuesta (incluye alias 'tablas' para compatibilidad con el front antiguo)
         return jsonify({
