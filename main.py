@@ -130,43 +130,49 @@ def buscar_carpeta_por_nombre(service, nombre_carpeta):
 # En main.py
 
 @app.route('/api/list-images', methods=['POST'])
-def handle_list_images():
+def list_images():
     try:
-        data = request.get_json()
-        folder_name = data.get('folder_name')
-        if not folder_name:
-            return jsonify({'error': 'No se proporcionó nombre de carpeta.'}), 400
+        data = request.get_json(force=True) or {}
+        info_proyecto = data.get("info_proyecto") or {}
+        # Puedes aceptar folder_name o folder_id directo
+        folder_name = (info_proyecto.get("folder_name") or data.get("folder_name") or "").strip()
+        folder_id = data.get("folder_id")
 
-        service, _ = authenticate_google_drive()
+        # Autenticación SIEMPRE por Service Account (mismo método del resto)
+        service, sa_email = authenticate_google_drive()
         if not service:
-            return jsonify({'error': 'Fallo en la autenticación con Drive.'}), 500
+            return jsonify({"error":"No se pudo autenticar con Drive"}), 500
 
-        folder_id = find_drive_id(service, f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder'")
+        # Resuelve folder_id si sólo vino el nombre
         if not folder_id:
-            return jsonify({'error': f"No se encontró la carpeta '{folder_name}' en Drive."}), 404
+            if not folder_name:
+                return jsonify({"error":"Falta 'folder_name' o 'folder_id'"}), 400
+            folder_id = find_drive_id(
+                service,
+                f"name = '{folder_name}' and mimeType = 'application/vnd.google-apps.folder'",
+                include_all_drives=True
+            )
+            if not folder_id:
+                return jsonify({"error": f"No se encontró la carpeta '{folder_name}' (o la SA no tiene permisos)."}), 404
 
-        parent_query = f"'{folder_id}' in parents"
+        # IMPORTANTE: comparte la carpeta en Drive con la Service Account (sa_email)
+        # Lista solo imágenes dentro de la carpeta (incluye Shared Drives)
+        query = f"'{folder_id}' in parents and mimeType contains 'image/' and trashed = false"
+        resp = service.files().list(
+            q=query,
+            fields="files(id,name,mimeType,thumbnailLink,webViewLink)",
+            pageSize=200,
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True
+        ).execute()
 
-        # 1. Lista las imágenes dinámicas
-        images_query = f"{parent_query} and (mimeType='image/jpeg' or mimeType='image/png')"
-        images = service.files().list(q=images_query, fields='files(id, name)').execute().get('files', [])
-
-        # 2. Busca los IDs de los archivos estáticos
-        ids_archivos = {
-            'tablas': find_drive_id(service, f"{parent_query} and name='Tablas.xlsx'"),
-            'logo': find_drive_id(service, f"{parent_query} and name='logo2.jpg'"),
-            'ubicacion_proyecto': find_drive_id(service, f"{parent_query} and name='ubicacion.png'"),
-            'ubicacion_paradas': find_drive_id(service, f"{parent_query} and name='ubicacion_paraderos.png'")
-        }
-
-        # 3. Devuelve todo en un solo paquete
-        return jsonify({
-            'images': images,
-            'ids_archivos': ids_archivos
-        })
-
+        files = resp.get("files", [])
+        images = [{"id": f["id"], "name": f["name"], "mimeType": f.get("mimeType")} for f in files]
+        return jsonify({"images": images, "folder_id": folder_id, "service_account": sa_email})
+    
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        # Devuelve detalle para depurar
+        return jsonify({"error": str(e)}), 500
     
 @app.route('/api/analyze-image', methods=['POST'], strict_slashes=False)
 def handle_analyze_image():
