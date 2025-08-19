@@ -432,6 +432,15 @@ def generate_report():
         print(f"❌ Error en /api/generate-report: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route("/api/gem-health")
+def gem_health():
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+        return {"ok": True}, 200
+    except Exception as e:
+        return {"ok": False, "error": str(e)}, 500
+
 # --- INICIO DEL SERVIDOR ---
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=81, debug=True)
